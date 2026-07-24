@@ -50,6 +50,65 @@
       box-shadow: 0 8px 30px rgba(0, 0, 0, 0.08);
     }
 
+    /* Auth Overlay */
+    #auth-overlay {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(162, 210, 255, 0.85);
+      backdrop-filter: blur(12px);
+      z-index: 1000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    
+    #auth-card {
+      width: 360px;
+      padding: 35px 25px;
+      background: rgba(255, 255, 255, 0.95);
+      border-radius: 20px;
+      box-shadow: 0 10px 40px rgba(0,0,0,0.15);
+      display: flex;
+      flex-direction: column;
+      gap: 15px;
+      text-align: center;
+      animation: popIn 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    }
+
+    .auth-input {
+      padding: 12px;
+      border-radius: 12px;
+      border: 1px solid #ddd;
+      font-size: 1rem;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    
+    .auth-input:focus {
+      border-color: #0077b6;
+    }
+
+    .auth-btn {
+      padding: 12px;
+      border-radius: 12px;
+      border: none;
+      font-size: 1rem;
+      font-weight: 700;
+      cursor: pointer;
+      color: white;
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+
+    .auth-btn:active {
+      transform: scale(0.96);
+    }
+
+    .btn-login { background: linear-gradient(135deg, #0077b6, #0096c7); box-shadow: 0 4px 12px rgba(0,119,182,0.3); }
+    .btn-register { background: linear-gradient(135deg, #009900, #2b9348); box-shadow: 0 4px 12px rgba(0,153,0,0.3); }
+
     /* UI Layout */
     #ui-container {
       position: absolute;
@@ -60,7 +119,7 @@
       z-index: 10;
       pointer-events: none;
       padding: 20px;
-      display: flex;
+      display: none; /* Hidden until login */
       flex-direction: column;
       justify-content: space-between;
     }
@@ -476,10 +535,23 @@
   <div id="floating-container"></div>
 
   <!-- 2D World Labels -->
-  <div id="robot-label" class="world-label">QUIZ 🤖</div>
-  <div id="island2-label" class="world-label locked">🔒 Level 2 (สวนเบอร์รี่)</div>
-  <div id="island3-label" class="world-label locked">🔒 Level 3 (กังหันลม)</div>
-  <div id="island4-label" class="world-label locked">🔒 Level 4 (ศาลเจ้าขุมทรัพย์)</div>
+  <div id="robot-label" class="world-label" style="display:none;">QUIZ 🤖</div>
+  <div id="island2-label" class="world-label locked" style="display:none;">🔒 Level 2 (สวนเบอร์รี่)</div>
+  <div id="island3-label" class="world-label locked" style="display:none;">🔒 Level 3 (กังหันลม)</div>
+  <div id="island4-label" class="world-label locked" style="display:none;">🔒 Level 4 (ศาลเจ้าขุมทรัพย์)</div>
+
+  <!-- Auth Overlay -->
+  <div id="auth-overlay">
+    <div id="auth-card">
+      <h2 style="color:#1d3557; margin-bottom: 5px;">🌾 Mini Farm Island</h2>
+      <div style="font-size:0.9rem; color:#555; margin-bottom: 10px;">กรุณาเข้าสู่ระบบเพื่อบันทึกการเล่น</div>
+      <input type="text" id="auth-username" class="auth-input" placeholder="Username (ชื่อผู้ใช้)">
+      <input type="password" id="auth-password" class="auth-input" placeholder="Password (รหัสผ่าน)">
+      <div id="auth-msg" style="font-size:0.85rem; font-weight:600; min-height: 20px;"></div>
+      <button class="auth-btn btn-login" onclick="handleAuth('login')">เข้าสู่ระบบ (Login)</button>
+      <button class="auth-btn btn-register" onclick="handleAuth('register')">สมัครสมาชิก (Register)</button>
+    </div>
+  </div>
 
   <!-- UI Overlay -->
   <div id="ui-container">
@@ -626,6 +698,170 @@
   </div>
 
   <script>
+    /* ==========================================
+       0. GOOGLE APPS SCRIPT CLOUD SAVE & AUTH
+       ========================================== */
+    const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbz56k-FS70lywWMtGMO4ld0gRhrQBf_0ERtLvKT5HjD2iH5u1uxHZaXDdw_X4frXsGe/exec";
+    let currentUser = null;
+    let loginTimestamp = 0;
+
+    async function handleAuth(action) {
+      const user = document.getElementById('auth-username').value.trim();
+      const pass = document.getElementById('auth-password').value.trim();
+      const msgEl = document.getElementById('auth-msg');
+
+      if (!user || !pass) {
+        msgEl.innerText = "กรุณากรอกข้อมูลให้ครบ";
+        msgEl.style.color = "red";
+        return;
+      }
+
+      msgEl.innerText = "กำลังเชื่อมต่อเซิร์ฟเวอร์...";
+      msgEl.style.color = "#0077b6";
+
+      try {
+        const payload = { action, username: user, password: pass };
+        const res = await fetch(SCRIPT_URL, {
+          method: 'POST',
+          body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+
+        if (data.status === 'success') {
+          if (action === 'register') {
+            msgEl.innerText = "สมัครสมาชิกสำเร็จ! กรุณาเข้าสู่ระบบ";
+            msgEl.style.color = "green";
+          } else {
+            // Login Success
+            currentUser = user;
+            loginTimestamp = Date.now();
+            
+            // Deserialize Game State if exists
+            if (data.saveData && Object.keys(data.saveData).length > 0) {
+              deserializeGameState(data.saveData);
+            }
+
+            document.getElementById('auth-overlay').style.display = 'none';
+            document.getElementById('ui-container').style.display = 'flex';
+            
+            // Show world labels now
+            document.getElementById('robot-label').style.display = 'block';
+            document.getElementById('island2-label').style.display = 'block';
+            document.getElementById('island3-label').style.display = 'block';
+            document.getElementById('island4-label').style.display = 'block';
+
+            initAudio();
+            showFloatingText(`ยินดีต้อนรับ ${user}!`, '#00BFFF');
+            
+            // Start Auto Save loop (Every 1 minute)
+            setInterval(() => doSaveGame(false), 60000);
+          }
+        } else {
+          msgEl.innerText = data.message;
+          msgEl.style.color = "red";
+        }
+      } catch(err) {
+        msgEl.innerText = "เชื่อมต่อผิดพลาด กรุณาลองใหม่";
+        msgEl.style.color = "red";
+      }
+    }
+
+    function serializeGameState() {
+      const plots = plotsData.map(p => ({
+        unlocked: p.unlocked,
+        cropType: p.cropType,
+        growthProgress: p.growthProgress,
+        growthDuration: p.growthDuration,
+        isFullyGrown: p.isFullyGrown
+      }));
+      return { gameState, plots };
+    }
+
+    function deserializeGameState(data) {
+      if (data.gameState) {
+        Object.assign(gameState, data.gameState);
+        updateHouseModel();
+        updateUI();
+      }
+      if (data.plots && data.plots.length === plotsData.length) {
+        data.plots.forEach((pData, i) => {
+          const p = plotsData[i];
+          p.unlocked = pData.unlocked;
+          p.cropType = pData.cropType;
+          p.growthProgress = pData.growthProgress;
+          p.growthDuration = pData.growthDuration;
+          p.isFullyGrown = pData.isFullyGrown;
+          
+          p.group.visible = p.unlocked;
+          
+          if (p.cropMesh) { p.group.remove(p.cropMesh); p.cropMesh = null; }
+          p.barGroup.visible = false;
+          
+          if (p.cropType) {
+            let stage = 0;
+            const ratio = p.growthDuration > 0 ? (p.growthProgress / p.growthDuration) : 0;
+            if (p.isFullyGrown || ratio >= 1) stage = 2;
+            else if (ratio >= 0.5) stage = 1;
+            
+            p.cropMesh = createCropMesh(p.cropType, stage);
+            p.group.add(p.cropMesh);
+            
+            if (stage < 2) {
+               p.barGroup.visible = true;
+               p.fillMesh.scale.x = Math.max(ratio, 0.01);
+            }
+          }
+        });
+      }
+    }
+
+    async function doSaveGame(isExit = false) {
+      if (!currentUser) return;
+      const payload = {
+        action: 'save',
+        username: currentUser,
+        saveData: serializeGameState()
+      };
+      
+      if (isExit) {
+        navigator.sendBeacon(SCRIPT_URL, JSON.stringify(payload));
+      } else {
+        try {
+          await fetch(SCRIPT_URL, {
+            method: 'POST',
+            body: JSON.stringify(payload)
+          });
+          showFloatingText("บันทึกเกมอัตโนมัติแล้ว 💾", "#00BFFF");
+        } catch(e) {}
+      }
+    }
+
+    function logPlaytime() {
+      if (!currentUser || loginTimestamp === 0) return;
+      const logoutTimestamp = Date.now();
+      const diffMs = logoutTimestamp - loginTimestamp;
+      const diffMins = (diffMs / 1000 / 60).toFixed(2);
+      
+      const payload = {
+        action: 'log_playtime',
+        username: currentUser,
+        loginTime: new Date(loginTimestamp).toISOString(),
+        logoutTime: new Date(logoutTimestamp).toISOString(),
+        durationMinutes: diffMins
+      };
+      
+      navigator.sendBeacon(SCRIPT_URL, JSON.stringify(payload));
+    }
+
+    // Auto Save & Log Playtime on Tab Close
+    window.addEventListener('beforeunload', () => {
+      if (currentUser) {
+        doSaveGame(true);
+        logPlaytime();
+      }
+    });
+
+
     /* ==========================================
        1. GAME DATA & CONFIGURATION
        ========================================== */
@@ -861,7 +1097,6 @@
       scene.add(island4Group);
     }
 
-    // New Log Bridge implementation with Ropes and thick posts
     function createBridgeGroup(p1, p2) {
       const group = new THREE.Group();
       const dist = p1.distanceTo(p2);
@@ -1378,13 +1613,13 @@
 
         if (gameState.level === 2 && !gameState.unlockedIslands.includes(2)) {
           gameState.unlockedIslands.push(2);
-          showFloatingText('✨ ปลดล็อคสะพานเกาะเบอร์รี่!', '#ff9f1c');
+          showFloatingText('✨ ปลดล็อคเกาะเบอร์รี่!', '#ff9f1c');
         } else if (gameState.level === 3 && !gameState.unlockedIslands.includes(3)) {
           gameState.unlockedIslands.push(3);
-          showFloatingText('✨ ปลดล็อคสะพานกังหันลม!', '#4361ee');
+          showFloatingText('✨ ปลดล็อคเกาะกังหันลม!', '#4361ee');
         } else if (gameState.level >= 4 && !gameState.unlockedIslands.includes(4)) {
           gameState.unlockedIslands.push(4);
-          showFloatingText('✨ ปลดล็อคสะพานศาลเจ้าขุมทรัพย์!', '#ffd700');
+          showFloatingText('✨ ปลดล็อคศาลเจ้าขุมทรัพย์!', '#ffd700');
         }
       }
 
@@ -1395,7 +1630,7 @@
        6. ROBOT KEYBOARD MOVEMENT (WASD)
        ========================================== */
     function updateRobotMovement(dt, time) {
-      if (!robotGroup) return;
+      if (!robotGroup || !currentUser) return; // Must be logged in
 
       let moveX = 0;
       let moveZ = 0;
@@ -1715,7 +1950,7 @@
       initAudio();
       if (!gameState.unlockedIslands.includes(2)) {
         playErrorSFX();
-        showFloatingText('ต้องใช้ Level 2 เพื่อปลดล็อคสะพาน!', '#d90429');
+        showFloatingText('ต้องใช้ Level 2 เพื่อปลดล็อคเกาะ!', '#d90429');
         return;
       }
 
@@ -1733,13 +1968,14 @@
       playHarvestSFX();
       showFloatingText('+80 🪙 (ทองคำเบอร์รี่)', '#ffb703');
       addXP(30);
+      updateUI();
     }
 
     function clickShrine() {
       initAudio();
       if (!gameState.unlockedIslands.includes(4)) {
         playErrorSFX();
-        showFloatingText('ต้องใช้ Level 4 เพื่อปลดล็อคสะพาน!', '#d90429');
+        showFloatingText('ต้องใช้ Level 4 เพื่อปลดล็อคเกาะ!', '#d90429');
         return;
       }
 
@@ -1756,6 +1992,7 @@
       playSellSFX();
       showFloatingText('👑 ขุมทรัพย์ศาลเจ้า! +300 🪙', '#ffd700');
       addXP(100);
+      updateUI();
     }
 
     /* ==========================================
@@ -1861,6 +2098,8 @@
     }
 
     function update2DLabels() {
+      if (!currentUser) return; // Do not show labels on login screen
+
       const rLabel = document.getElementById('robot-label');
       if (robotGroup) {
         const rPos = robotGroup.position.clone(); rPos.y += 3.0; rPos.project(camera);
@@ -1914,49 +2153,51 @@
 
       updateRobotMovement(dt, time);
 
-      // Pig update loop
-      pigs.forEach(pig => {
-        pig.userData.timer -= dt;
-        if (pig.userData.timer <= 0) {
-          if (pig.userData.state === 'idle') {
-            pig.userData.state = 'walk';
-            pig.userData.timer = 1.0 + Math.random() * 3.0;
-            pig.userData.angle += (Math.random() - 0.5) * Math.PI;
-          } else {
-            pig.userData.state = 'idle';
-            pig.userData.timer = 2.0 + Math.random() * 4.0;
-          }
-        }
-
-        if (pig.userData.state === 'walk') {
-          pig.rotation.y = THREE.MathUtils.lerp(pig.rotation.y, pig.userData.angle, 0.1);
-          const dirX = Math.sin(pig.rotation.y);
-          const dirZ = Math.cos(pig.rotation.y);
-          
-          let nextX = pig.position.x + dirX * pig.userData.speed * dt;
-          let nextZ = pig.position.z + dirZ * pig.userData.speed * dt;
-
-          // Keep pig on main island radius ~ 11
-          if (Math.hypot(nextX, nextZ) > 11) {
-            pig.userData.angle += Math.PI; // turnaround
-          } else {
-            pig.position.x = nextX;
-            pig.position.z = nextZ;
+      // Pig update loop (Pause logic if not logged in)
+      if (currentUser) {
+        pigs.forEach(pig => {
+          pig.userData.timer -= dt;
+          if (pig.userData.timer <= 0) {
+            if (pig.userData.state === 'idle') {
+              pig.userData.state = 'walk';
+              pig.userData.timer = 1.0 + Math.random() * 3.0;
+              pig.userData.angle += (Math.random() - 0.5) * Math.PI;
+            } else {
+              pig.userData.state = 'idle';
+              pig.userData.timer = 2.0 + Math.random() * 4.0;
+            }
           }
 
-          pig.userData.walkCycle += dt * 10;
-          const swing = Math.sin(pig.userData.walkCycle) * 0.3;
-          pig.userData.legFL.rotation.x = swing;
-          pig.userData.legFR.rotation.x = -swing;
-          pig.userData.legBL.rotation.x = -swing;
-          pig.userData.legBR.rotation.x = swing;
-        } else {
-          pig.userData.legFL.rotation.x = 0;
-          pig.userData.legFR.rotation.x = 0;
-          pig.userData.legBL.rotation.x = 0;
-          pig.userData.legBR.rotation.x = 0;
-        }
-      });
+          if (pig.userData.state === 'walk') {
+            pig.rotation.y = THREE.MathUtils.lerp(pig.rotation.y, pig.userData.angle, 0.1);
+            const dirX = Math.sin(pig.rotation.y);
+            const dirZ = Math.cos(pig.rotation.y);
+            
+            let nextX = pig.position.x + dirX * pig.userData.speed * dt;
+            let nextZ = pig.position.z + dirZ * pig.userData.speed * dt;
+
+            // Keep pig on main island radius ~ 11
+            if (Math.hypot(nextX, nextZ) > 11) {
+              pig.userData.angle += Math.PI; // turnaround
+            } else {
+              pig.position.x = nextX;
+              pig.position.z = nextZ;
+            }
+
+            pig.userData.walkCycle += dt * 10;
+            const swing = Math.sin(pig.userData.walkCycle) * 0.3;
+            pig.userData.legFL.rotation.x = swing;
+            pig.userData.legFR.rotation.x = -swing;
+            pig.userData.legBL.rotation.x = -swing;
+            pig.userData.legBR.rotation.x = swing;
+          } else {
+            pig.userData.legFL.rotation.x = 0;
+            pig.userData.legFR.rotation.x = 0;
+            pig.userData.legBL.rotation.x = 0;
+            pig.userData.legBR.rotation.x = 0;
+          }
+        });
+      }
 
       if (oceanMesh) {
         const pos = oceanMesh.geometry.attributes.position;
@@ -1971,18 +2212,20 @@
 
       if (windmillBlades && gameState.unlockedIslands.includes(3)) {
         windmillBlades.rotation.z += dt * 1.5;
-        gameState.windmillPassiveTimer += dt;
-        if (gameState.windmillPassiveTimer >= 10.0) {
-          gameState.windmillPassiveTimer = 0;
-          gameState.money += 20;
-          showFloatingText('+20 🪙 (กังหันลม)', '#00BFFF');
-          updateUI();
+        if (currentUser) {
+          gameState.windmillPassiveTimer += dt;
+          if (gameState.windmillPassiveTimer >= 10.0) {
+            gameState.windmillPassiveTimer = 0;
+            gameState.money += 20;
+            showFloatingText('+20 🪙 (กังหันลม)', '#00BFFF');
+            updateUI();
+          }
         }
       }
 
       berryBushes.forEach(bush => {
         if (!bush.userData.ready) {
-          bush.userData.cooldown -= dt;
+          if (currentUser) bush.userData.cooldown -= dt;
           if (bush.userData.cooldown <= 0) {
             bush.userData.ready = true;
             bush.userData.berriesMesh.visible = true;
@@ -1991,7 +2234,7 @@
       });
 
       if (shrineMesh && !shrineMesh.userData.ready) {
-        shrineMesh.userData.cooldown -= dt;
+        if (currentUser) shrineMesh.userData.cooldown -= dt;
         if (shrineMesh.userData.cooldown <= 0) {
           shrineMesh.userData.ready = true;
         }
@@ -2020,10 +2263,10 @@
       const growthMultiplier = gameState.wateringBuffTimer > 0 ? 1.5 : 1.0;
 
       plotsData.forEach(plot => {
-        if (plot.unlocked && plot.cropType && !plot.isFullyGrown) {
+        if (plot.unlocked && plot.cropType && !plot.isFullyGrown && currentUser) {
           plot.growthProgress += dt * growthMultiplier;
           const ratio = Math.min(plot.growthProgress / plot.growthDuration, 1.0);
-          plot.fillMesh.scale.x = ratio;
+          plot.fillMesh.scale.x = Math.max(ratio, 0.01);
 
           if (ratio >= 0.5 && plot.cropMesh && plot.cropMesh.children.length <= 2 && plot.cropType !== 'sprout_done') {
             plot.group.remove(plot.cropMesh);
@@ -2057,7 +2300,8 @@
        12. RAYCASTING & INTERACTION
        ========================================== */
     function onPointerDown(event) {
-      if (event.target.closest('.interactive') || event.target.closest('#quiz-modal')) return;
+      if (!currentUser) return; // Ignore interactions if not logged in
+      if (event.target.closest('.interactive') || event.target.closest('#quiz-modal') || event.target.closest('#auth-overlay')) return;
 
       mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
       mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
